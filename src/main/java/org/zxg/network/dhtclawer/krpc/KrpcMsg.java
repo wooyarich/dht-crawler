@@ -14,26 +14,16 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-package com.zxg.network.dht;
+package org.zxg.network.dhtclawer.krpc;
 
-import java.math.BigInteger;
-import java.util.List;
-import java.util.concurrent.CopyOnWriteArrayList;
+import org.zxg.network.dhtclawer.Addr;
 
 /**
  *
  * @author Xianguang Zhou <xianguang.zhou@outlook.com>
  */
-public class RouteTable {
+public abstract class KrpcMsg {
 
-    private List<Bucket> buckets;
-
-    public RouteTable() {
-        buckets = new CopyOnWriteArrayList<>();
-        buckets.add(new Bucket(BigInteger.ZERO, BigInteger.valueOf(2).pow(160)));
-    }
-
-    public List<Bucket> getBuckets() {
-        return buckets;
-    }
+    public Addr addr;
+    public byte[] tId;
 }

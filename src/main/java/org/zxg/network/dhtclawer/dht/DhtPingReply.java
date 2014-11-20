@@ -14,15 +14,12 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-package com.zxg.network.dht;
+package org.zxg.network.dhtclawer.dht;
 
 /**
  *
  * @author Xianguang Zhou <xianguang.zhou@outlook.com>
  */
-public class Clawer {
+public class DhtPingReply extends DhtReply {
 
-    public static void main(String[] args) {
-
-    }
 }

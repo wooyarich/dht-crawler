@@ -14,48 +14,48 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-package com.zxg.network.dht;
+package org.zxg.network.dhtclawer;
 
-import java.math.BigInteger;
-import java.util.Date;
-import java.util.List;
-import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.Arrays;
 
 /**
  *
  * @author Xianguang Zhou <xianguang.zhou@outlook.com>
  */
-public class Bucket {
+public class Node {
 
-    private BigInteger min;
-    private BigInteger max;
-    private List<Node> nodes;
-    private Date lastChange;
+    public byte[] id;
+    public String ip;
+    public int port;
+    public long lastReqTime;
+    public long lastReplyTime;
+    public boolean replied;
 
-    public Bucket(BigInteger min, BigInteger max) {
-        this.min = min;
-        this.max = max;
-        nodes = new CopyOnWriteArrayList<>();
+    public Node() {
+        lastReqTime = System.currentTimeMillis();
+        lastReplyTime = System.currentTimeMillis();
+        replied = false;
     }
 
-    public BigInteger getMin() {
-        return min;
+    public Node(byte[] id, String ip, int port) {
+        this();
+        this.id = id;
+        this.ip = ip;
+        this.port = port;
     }
 
-    public BigInteger getMax() {
-        return max;
-    }
-
-    public List<Node> getNodes() {
-        return nodes;
-    }
-
-    public Date getLastChange() {
-        return lastChange;
-    }
-
-    public void setLastChange(Date lastChange) {
-        this.lastChange = lastChange;
+    @Override
+    public boolean equals(Object obj) {
+        if (this == obj) {
+            return true;
+        }
+        if (obj instanceof Node) {
+            Node other = (Node) obj;
+            if (Arrays.equals(this.id, other.id)) {
+                return true;
+            }
+        }
+        return false;
     }
 
 }

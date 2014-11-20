@@ -21,11 +21,19 @@
     </developers>
 
     <properties>
-        <mainClass>com.zxg.network.dht.Clawer</mainClass>
+        <mainClass>org.zxg.network.dhtclawer.Clawer</mainClass>
         <maven.compiler.source>1.8</maven.compiler.source>
         <maven.compiler.target>1.8</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.turn</groupId>
+            <artifactId>ttorrent</artifactId>
+            <version>1.4</version>
+        </dependency>
+    </dependencies>
 
     <build>
         <plugins>
