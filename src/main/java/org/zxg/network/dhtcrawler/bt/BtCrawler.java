@@ -14,13 +14,35 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-package org.zxg.network.dhtcrawler;
+package org.zxg.network.dhtcrawler.bt;
+
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import org.zxg.network.dhtcrawler.CrawlerListener;
 
 /**
  *
  * @author Xianguang Zhou <xianguang.zhou@outlook.com>
  */
-public interface InfoHashListener {
+public class BtCrawler {
 
-    public void accept(byte[] infoHash);
+    private ExecutorService executorService;
+    private CrawlerListener crawlerListener;
+
+    public BtCrawler(CrawlerListener crawlerListener) {
+        this.crawlerListener = crawlerListener;
+    }
+
+    public void start() {
+        executorService = Executors.newCachedThreadPool();
+    }
+
+    public void stop() {
+        executorService.shutdownNow();
+    }
+
+    public void downloadMetaData(byte[] infoHash, String peerIp, int peerPort, byte[] peerNodeId) {
+        executorService.submit(new MetaDataDownloadTask(infoHash, peerIp, peerPort, peerNodeId, this.crawlerListener));
+    }
+
 }

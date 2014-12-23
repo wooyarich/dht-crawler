@@ -17,6 +17,7 @@
 package org.zxg.network.dhtcrawler;
 
 import java.util.Arrays;
+import java.util.List;
 
 /**
  *
@@ -27,9 +28,12 @@ public class Node {
     public byte[] id;
     public String ip;
     public int port;
+
     public long lastReqTime;
     public long lastReplyTime;
     public boolean replied;
+
+    public List<GetPeersTokenAndTime> getPeersTokens;
 
     public Node() {
         lastReqTime = System.currentTimeMillis();

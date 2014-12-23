@@ -31,6 +31,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import org.apache.commons.codec.binary.Hex;
+import org.zxg.network.dhtcrawler.bt.BtCrawler;
 import org.zxg.network.dhtcrawler.dht.CompactIpAddressPortInfo;
 import org.zxg.network.dhtcrawler.dht.CompactNodeInfo;
 import org.zxg.network.dhtcrawler.dht.Dht;
@@ -73,15 +74,19 @@ public class Crawler extends Dht {
     private ReceiveThread receiveThread;
     private Timer timer;
 
-    private InfoHashListener infoHashListener;
+    private CrawlerListener crawlerListener;
 
-    public Crawler(String host, int port, InfoHashListener infoHashListener) {
+    private BtCrawler btCrawler;
+
+    public Crawler(String host, int port, CrawlerListener crawlerListener) {
         this.host = host;
         this.port = port;
-        this.infoHashListener = infoHashListener;
+        this.crawlerListener = crawlerListener;
     }
 
     public void start() throws SocketException, NoSuchAlgorithmException {
+        btCrawler = new BtCrawler(this.crawlerListener);
+        btCrawler.start();
         nodeId = Util.randomId();
         routeTable = new RouteTable(nodeId);
         dhtReqMethodCache = new ConcurrentHashMap<>();
@@ -116,6 +121,7 @@ public class Crawler extends Dht {
             Logger.getLogger(Crawler.class.getName()).log(Level.SEVERE, null, ex);
         }
         socket.close();
+        btCrawler.stop();
     }
 
     private void clearDhtReqMethodCache() {
@@ -145,10 +151,10 @@ public class Crawler extends Dht {
 
     private void receive() throws IOException, DhtException, KrpcException {
         DhtMsg dhtMsg = recvDht();
-        addRouteTableNode(dhtMsg);
+        Node addedNode = addRouteTableNode(dhtMsg);
         if (dhtMsg instanceof DhtGetPeersReq) {
             DhtGetPeersReq dhtGetPeersReq = (DhtGetPeersReq) dhtMsg;
-            receive(dhtGetPeersReq);
+            receive(dhtGetPeersReq, addedNode);
         } else if (dhtMsg instanceof DhtGetPeersReply) {
             DhtGetPeersReply dhtGetPeersReply = (DhtGetPeersReply) dhtMsg;
             receive(dhtGetPeersReply);
@@ -166,19 +172,38 @@ public class Crawler extends Dht {
             receive(dhtPingReply);
         } else if (dhtMsg instanceof DhtAnnouncePeerReq) {
             DhtAnnouncePeerReq dhtAnnouncePeerReq = (DhtAnnouncePeerReq) dhtMsg;
-            receive(dhtAnnouncePeerReq);
+            receive(dhtAnnouncePeerReq, addedNode);
         } else if (dhtMsg instanceof DhtAnnouncePeerReply) {
             DhtAnnouncePeerReply dhtAnnouncePeerReply = (DhtAnnouncePeerReply) dhtMsg;
             receive(dhtAnnouncePeerReply);
         }
     }
 
-    private void receive(DhtGetPeersReq dhtGetPeersReq) throws IOException {
+    private byte[] generateGetPeersToken() {
+        return Util.entropy(4);
+    }
+
+    private void receive(DhtGetPeersReq dhtGetPeersReq, Node addedNode) throws IOException {
         DhtGetPeersReply dhtGetPeersReply = new DhtGetPeersReply();
         dhtGetPeersReply.addr = dhtGetPeersReq.addr;
         dhtGetPeersReply.tId = dhtGetPeersReq.tId;
         dhtGetPeersReply.nodeId = this.nodeId;
-        dhtGetPeersReply.token = Util.entropy(4);
+        if (addedNode != null) {
+            if (addedNode.getPeersTokens == null) {
+                addedNode.getPeersTokens = new LinkedList<>();
+            }
+            if (addedNode.getPeersTokens.isEmpty() || System.currentTimeMillis() - addedNode.getPeersTokens.get(0).time > 300000) {
+                GetPeersTokenAndTime getPeersTokenAndTime = new GetPeersTokenAndTime();
+                getPeersTokenAndTime.token = generateGetPeersToken();
+                getPeersTokenAndTime.time = System.currentTimeMillis();
+                addedNode.getPeersTokens.add(0, getPeersTokenAndTime);
+                dhtGetPeersReply.token = getPeersTokenAndTime.token;
+            } else {
+                dhtGetPeersReply.token = addedNode.getPeersTokens.get(0).token;
+            }
+        } else {
+            dhtGetPeersReply.token = generateGetPeersToken();
+        }
         dhtGetPeersReply.nodes = new LinkedList<>();
         routeTable.nearestNodes(dhtGetPeersReq.infoHash).stream().map(node -> {
             CompactNodeInfo compactNodeInfo = new CompactNodeInfo();
@@ -191,7 +216,19 @@ public class Crawler extends Dht {
             dhtGetPeersReply.nodes.add(compactNodeInfo);
         });
         sendDht(dhtGetPeersReply);
-        infoHashListener.accept(dhtGetPeersReq.infoHash);
+        if (addedNode != null) {
+            long currentTime = System.currentTimeMillis();
+            while (!addedNode.getPeersTokens.isEmpty()) {
+                int lastIndex = addedNode.getPeersTokens.size() - 1;
+                GetPeersTokenAndTime lastGetPeersTokenAndTime = addedNode.getPeersTokens.get(lastIndex);
+                if (currentTime - lastGetPeersTokenAndTime.time > 600000) {
+                    addedNode.getPeersTokens.remove(lastIndex);
+                } else {
+                    break;
+                }
+            }
+        }
+        crawlerListener.getPeers(dhtGetPeersReq.infoHash);
     }
 
     private void receive(DhtGetPeersReply dhtGetPeersReply) {
@@ -238,39 +275,61 @@ public class Crawler extends Dht {
     private void receive(DhtPingReply dhtPingReply) {
     }
 
-    private void receive(DhtAnnouncePeerReq dhtAnnouncePeerReq) throws IOException {
+    private void receive(DhtAnnouncePeerReq dhtAnnouncePeerReq, Node addedNode) throws IOException {
         DhtAnnouncePeerReply dhtAnnouncePeerReply = new DhtAnnouncePeerReply();
         dhtAnnouncePeerReply.addr = dhtAnnouncePeerReq.addr;
         dhtAnnouncePeerReply.tId = dhtAnnouncePeerReq.tId;
         dhtAnnouncePeerReply.nodeId = this.nodeId;
         sendDht(dhtAnnouncePeerReply);
-        infoHashListener.accept(dhtAnnouncePeerReq.infoHash);
+//        System.out.println("announce peer:" + Hex.encodeHexString(dhtAnnouncePeerReq.infoHash) + " " + Hex.encodeHexString(dhtAnnouncePeerReq.token)); // TODO
+//        if (addedNode != null && addedNode.getPeersTokens != null) {
+//            long currentTime = System.currentTimeMillis();
+//            for (GetPeersTokenAndTime getPeersTokenAndTime : addedNode.getPeersTokens) {
+//                System.out.println("cached token:" + Hex.encodeHexString(getPeersTokenAndTime.token));
+//                if (currentTime - getPeersTokenAndTime.time > 600000) {
+//                    break;
+//                }
+//                if (Arrays.equals(getPeersTokenAndTime.token, dhtAnnouncePeerReq.token)) {
+        if (crawlerListener.announcePeer(dhtAnnouncePeerReq.infoHash)) {
+            btCrawler.downloadMetaData(dhtAnnouncePeerReq.infoHash, dhtAnnouncePeerReq.addr.ip, dhtAnnouncePeerReq.port, dhtAnnouncePeerReq.nodeId);
+        }
+//                    break;
+//                }
+//            }
+//        }
     }
 
     private void receive(DhtAnnouncePeerReply dhtAnnouncePeerReply) {
     }
 
-    private void addRouteTableNode(DhtMsg dhtMsg) {
+    private Node addRouteTableNode(DhtMsg dhtMsg) {
+        final Ref<Node> addedNodeRef = new Ref<>();
         try {
             if (dhtMsg instanceof DhtReq) {
                 DhtReq dhtReq = (DhtReq) dhtMsg;
-                routeTable.add(new Node(dhtReq.nodeId, dhtReq.addr.ip, dhtReq.addr.port), (newNode, oldNode) -> {
+                addedNodeRef.target = new Node(dhtReq.nodeId, dhtReq.addr.ip, dhtReq.addr.port);
+                routeTable.add(addedNodeRef.target, (newNode, oldNode) -> {
                     oldNode.ip = newNode.ip;
                     oldNode.port = newNode.port;
                     oldNode.lastReqTime = newNode.lastReqTime;
+                    addedNodeRef.target = oldNode;
                 });
             } else if (dhtMsg instanceof DhtReply) {
                 DhtReply dhtReply = (DhtReply) dhtMsg;
-                routeTable.add(new Node(dhtReply.nodeId, dhtReply.addr.ip, dhtReply.addr.port), (newNode, oldNode) -> {
+                addedNodeRef.target = new Node(dhtReply.nodeId, dhtReply.addr.ip, dhtReply.addr.port);
+                routeTable.add(addedNodeRef.target, (newNode, oldNode) -> {
                     oldNode.ip = newNode.ip;
                     oldNode.port = newNode.port;
                     oldNode.lastReplyTime = newNode.lastReplyTime;
                     oldNode.replied = true;
+                    addedNodeRef.target = oldNode;
                 });
             }
         } catch (BucketFullException ex) {
+            addedNodeRef.target = null;
             Logger.getLogger(Crawler.class.getName()).log(Level.SEVERE, null, ex);
         }
+        return addedNodeRef.target;
     }
 
     private void pingNode(Addr addr, byte[] nodeId) throws IOException {
@@ -316,7 +375,7 @@ public class Crawler extends Dht {
             while (running) {
                 try {
                     receive();
-                } catch (DhtException | KrpcException ex) {
+                } catch (DhtException | KrpcException | IOException ex) {
                     Logger.getLogger(ReceiveThread.class.getName()).log(Level.FINE, null, ex);
                 } catch (Exception ex) {
                     Logger.getLogger(ReceiveThread.class.getName()).log(Level.SEVERE, null, ex);
@@ -334,7 +393,17 @@ public class Crawler extends Dht {
     }
 
     public static void main(String[] args) throws Exception {
-        Crawler clawer = new Crawler("0.0.0.0", 6881, infoHash -> System.out.println(Hex.encodeHexString(infoHash)));
+        Crawler clawer = new Crawler("0.0.0.0", 6881, new CrawlerListener() {
+            @Override
+            public void getPeers(byte[] infoHash) {
+                System.out.println("infohash:" + Hex.encodeHexString(infoHash));
+            }
+
+            @Override
+            public void metaData(byte[] infoHash, MetaData metaData) {
+                System.out.println("name:" + metaData.name);
+            }
+        });
         clawer.start();
         Runtime.getRuntime().addShutdownHook(new Thread(() -> clawer.stop()));
         clawer.join();
