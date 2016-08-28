@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2014 Xianguang Zhou <xianguang.zhou@outlook.com>
+ * Copyright (C) 2014 - 2016 Xianguang Zhou <xianguang.zhou@outlook.com>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as published by
@@ -362,7 +362,7 @@ public class Crawler extends Dht {
 
     private class ReceiveThread extends Thread {
 
-        private boolean running;
+        private volatile boolean running;
 
         public ReceiveThread() {
             super();
